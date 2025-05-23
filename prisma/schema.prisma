@@ -40,6 +40,7 @@ model Pedido {
   telefone       String
   endereco       String
   metodoPagamento MetodoPagamento
+    trocoPara     Float?    
   status         PedidoStatus     @default(pendente)
   criadoEm       DateTime        @default(now())
 
