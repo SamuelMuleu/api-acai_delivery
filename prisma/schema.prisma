@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Produto {
+  id         Int         @id @default(autoincrement())
+  nome       String
+  descricao  String?  
+  imagem     String?
+  tamanhos   Json
+  criadoEm   DateTime    @default(now())
+
+  complementos ProdutoComplemento[]  // relação produtos <-> complementos (muitos-para-muitos)
+  pedidos     PedidoProduto[]        // relação pedidos <-> produtos (muitos-para-muitos via PedidoProduto)
+}
+
+model Complemento {
+  id          Int           @id @default(autoincrement())
+  nome        String
+  tipo        ComplementoTipo
+  preco       Float         @default(0) // Novo campo
+  ativo       Boolean       @default(true)
+  produtos    ProdutoComplemento[]
+  pedidoProdutosComplementos PedidoProdutoComplemento[]
+}
+enum ComplementoTipo {
+  fruta
+  cobertura
+  adicional
+}
+
+model Pedido {
+  id             Int              @id @default(autoincrement())
+  nomeCliente    String
+  telefone       String
+  endereco       String
+  metodoPagamento MetodoPagamento
+  status         PedidoStatus     @default(pendente)
+  criadoEm       DateTime        @default(now())
+
+  produtos       PedidoProduto[]    // relação pedido <-> produtos
+}
+
+enum MetodoPagamento {
+  pix
+  dinheiro
+  cartao
+}
+
+enum PedidoStatus {
+  pendente
+  preparo
+  saiu
+  entregue
+}
+
+model PedidoProduto {
+  id         Int      @id @default(autoincrement())
+  pedido     Pedido   @relation(fields: [pedidoId], references: [id])
+  pedidoId   Int
+
+  produto    Produto  @relation(fields: [produtoId], references: [id])
+  produtoId  Int
+
+  tamanho    String   // ex: "300ml"
+  preco      Float
+
+  complementos PedidoProdutoComplemento[]   // relação PedidoProduto <-> complementos escolhidos neste pedido-produto
+}
+
+model ProdutoComplemento {
+  id            Int         @id @default(autoincrement())
+  produto       Produto     @relation(fields: [produtoId], references: [id])
+  produtoId     Int
+
+  complemento   Complemento @relation(fields: [complementoId], references: [id])
+  complementoId Int
+}
+
+model PedidoProdutoComplemento {
+  id                Int            @id @default(autoincrement())
+  
+  pedidoProduto     PedidoProduto  @relation(fields: [pedidoProdutoId], references: [id])
+  pedidoProdutoId   Int
+
+  complemento       Complemento    @relation(fields: [complementoId], references: [id])
+  complementoId     Int
+}
