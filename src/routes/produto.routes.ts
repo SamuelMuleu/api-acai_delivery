@@ -98,5 +98,34 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 });
+router.delete('/:id', async (req, res): Promise<any> => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+    try {
+        const produto = await prisma.produto.delete({
+            where: { id },
+        });
+
+        if (produto.imagem) {
+            const imagemPath = `public${produto.imagem}`;
+            if (fs.existsSync(imagemPath)) {
+                fs.unlinkSync(imagemPath);
+            }
+        }
+
+        res.json(produto);
+    } catch (error) {
+        console.error('Erro ao excluir produto:', error);
+
+        if (error instanceof Error) {
+            return res.status(500).json({ error: error.message });
+        } else {
+            return res.status(500).json({ error: 'Erro interno do servidor' });
+        }
+    }
+
+});
 
 export default router;
