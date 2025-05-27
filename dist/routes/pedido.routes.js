@@ -21,7 +21,7 @@ router.get('/', async (_, res) => {
 // Criar novo pedido
 router.post('/', async (req, res) => {
     try {
-        const { nomeCliente, telefone, endereco, metodoPagamento, trocoPara, produtos } = req.body;
+        const { nomeCliente, telefone, endereco, metodoPagamento, produtos } = req.body;
         // Validação básica
         if (!nomeCliente || !telefone || !endereco || !metodoPagamento || !produtos) {
             return res.status(400).json({ error: 'Dados incompletos' });
@@ -71,7 +71,6 @@ router.post('/', async (req, res) => {
                 endereco,
                 metodoPagamento,
                 status: 'pendente',
-                trocoPara: metodoPagamento === 'dinheiro' ? trocoPara || null : null,
                 produtos: {
                     create: produtosComPrecos.map(produto => ({
                         produto: { connect: { id: produto.produtoId } },
@@ -98,10 +97,6 @@ router.post('/', async (req, res) => {
                 }
             }
         });
-        if (metodoPagamento === 'dinheiro' && (trocoPara === undefined || trocoPara <= 0)) {
-            return res.status(400).json({ error: 'Informe o valor para troco corretamente' });
-        }
-
         res.status(201).json({
             ...novoPedido,
             detalhesPrecos: {

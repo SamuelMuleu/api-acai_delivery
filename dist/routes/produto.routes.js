@@ -15,15 +15,14 @@ router.get('/', async (_, res) => {
             include: {
                 complementos: {
                     include: {
-                        complemento: true // Inclui os detalhes dos complementos associados
+                        complemento: true
                     }
                 }
             },
             orderBy: {
-                criadoEm: 'desc' // Ordena do mais recente para o mais antigo
+                criadoEm: 'desc'
             }
         });
-        // Formata os tamanhos (que estão como JSON no banco)
         const produtosFormatados = produtos.map(produto => ({
             ...produto,
             tamanhos: produto.tamanhos
@@ -39,29 +38,66 @@ router.get('/', async (_, res) => {
         });
     }
 });
+router.get('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+    try {
+        const produto = await prisma.produto.findUnique({
+            where: { id },
+            include: {
+                complementos: {
+                    include: {
+                        complemento: true
+                    }
+                }
+            }
+        });
+        if (!produto) {
+            return res.status(404).json({ error: 'Produto não encontrado' });
+        }
+        produto.tamanhos = produto.tamanhos;
+        res.json(produto);
+    }
+    catch (error) {
+        console.error('Erro ao buscar produto por ID:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
 router.post('/', multer_1.default.single('imagem'), async (req, res) => {
     try {
         if (!req.file) {
-            return res.status(400).json({ error: 'Nome e tamanhos são obrigatórios' });
+            return res.status(400).json({ error: 'Imagem é obrigatória' });
         }
-        const { nome, descricao, imagem, tamanhos } = req.body;
-        // Validação básica
-        if (!nome || !tamanhos) {
-            return res.status(400).json({ error: 'Dados inválidos' });
+        const { nome, descricao, tamanhos } = req.body;
+        if (!nome) {
+            return res.status(400).json({ error: 'Nome é obrigatório' });
+        }
+        if (!tamanhos) {
+            return res.status(400).json({ error: 'Tamanhos são obrigatórios' });
         }
         let tamanhosArray;
         try {
-            tamanhosArray = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
+            tamanhosArray = JSON.parse(tamanhos);
+            if (!Array.isArray(tamanhosArray)) {
+                throw new Error('Formato inválido');
+            }
         }
         catch (e) {
             return res.status(400).json({ error: 'Formato de tamanhos inválido' });
         }
-        const imagemPath = `/uploads/${req.file.filename}`;
+        const tamanhosInvalidos = tamanhosArray.some(t => !t.nome || typeof t.nome !== 'string' ||
+            typeof t.preco !== 'number' || isNaN(t.preco));
+        if (tamanhosInvalidos) {
+            return res.status(400).json({ error: 'Dados de tamanhos inválidos' });
+        }
+        const imagemURL = req.file.path;
         const novoProduto = await prisma.produto.create({
             data: {
                 nome,
                 descricao,
-                imagem: imagemPath,
+                imagem: imagemURL,
                 tamanhos: tamanhosArray
             }
         });
@@ -69,10 +105,34 @@ router.post('/', multer_1.default.single('imagem'), async (req, res) => {
     }
     catch (error) {
         console.error('Erro ao criar produto:', error);
-        if (req.file) {
-            fs_1.default.unlinkSync(req.file.path);
-        }
         res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
+router.delete('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+    try {
+        const produto = await prisma.produto.delete({
+            where: { id },
+        });
+        if (produto.imagem) {
+            const imagemPath = `public${produto.imagem}`;
+            if (fs_1.default.existsSync(imagemPath)) {
+                fs_1.default.unlinkSync(imagemPath);
+            }
+        }
+        res.json(produto);
+    }
+    catch (error) {
+        console.error('Erro ao excluir produto:', error);
+        if (error instanceof Error) {
+            return res.status(500).json({ error: error.message });
+        }
+        else {
+            return res.status(500).json({ error: 'Erro interno do servidor' });
+        }
     }
 });
 exports.default = router;

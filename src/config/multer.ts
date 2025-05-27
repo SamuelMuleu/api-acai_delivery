@@ -1,14 +1,18 @@
 import * as multerStorageCloudinary from 'multer-storage-cloudinary';
 import multer, { StorageEngine } from 'multer';
 import path from 'path';
-import { v2 as cloudinary } from 'cloudinary';
+import cloudinary from 'cloudinary';
 
-
+cloudinary.v2.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+    api_key: process.env.CLOUDINARY_API_KEY!,
+    api_secret: process.env.CLOUDINARY_API_SECRET!,
+});
 
 const CloudinaryStorage = (multerStorageCloudinary as any).CloudinaryStorage;
 
 const storage = new CloudinaryStorage({
-    cloudinary,
+    cloudinary: cloudinary.v2,
     params: {
         folder: 'acai-products',
         allowed_formats: ['jpg', 'png', 'jpeg'],
@@ -17,8 +21,8 @@ const storage = new CloudinaryStorage({
 }) as StorageEngine;
 
 const upload = multer({
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const filetypes = /jpeg|jpg|png|gif/;
         const mimetype = filetypes.test(file.mimetype);
@@ -28,7 +32,7 @@ const upload = multer({
             return cb(null, true);
         }
         cb(new Error('Apenas imagens são permitidas'));
-    }
+    },
 });
 
 export default upload;

@@ -68,4 +68,23 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 });
+router.delete('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+    try {
+        const complemento = await prisma.complemento.delete({
+            where: { id },
+        });
+        res.json(complemento);
+    }
+    catch (error) {
+        console.error('Erro ao excluir complemento:', error);
+        if (error instanceof Error) {
+            return res.status(500).json({ error: error.message });
+        }
+        return res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
 exports.default = router;
