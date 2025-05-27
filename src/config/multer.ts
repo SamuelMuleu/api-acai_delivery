@@ -1,10 +1,11 @@
-import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import * as multerStorageCloudinary from 'multer-storage-cloudinary';
 import multer, { StorageEngine } from 'multer';
 import path from 'path';
 import { v2 as cloudinary } from 'cloudinary';
 
 
 
+const CloudinaryStorage = (multerStorageCloudinary as any).CloudinaryStorage;
 
 const storage = new CloudinaryStorage({
     cloudinary,
