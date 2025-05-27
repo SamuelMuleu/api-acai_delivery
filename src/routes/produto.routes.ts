@@ -48,12 +48,12 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
         const { nome, descricao, tamanhos } = req.body;
 
         if (!nome) {
-            fs.unlinkSync(req.file.path);
+
             return res.status(400).json({ error: 'Nome é obrigatório' });
         }
 
         if (!tamanhos) {
-            fs.unlinkSync(req.file.path);
+
             return res.status(400).json({ error: 'Tamanhos são obrigatórios' });
         }
         let tamanhosArray;
@@ -63,7 +63,7 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
                 throw new Error('Formato inválido');
             }
         } catch (e) {
-            fs.unlinkSync(req.file.path);
+
             return res.status(400).json({ error: 'Formato de tamanhos inválido' });
         }
 
@@ -74,17 +74,17 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
         );
 
         if (tamanhosInvalidos) {
-            fs.unlinkSync(req.file.path);
+
             return res.status(400).json({ error: 'Dados de tamanhos inválidos' });
         }
 
-        const imagemPath = `/uploads/${req.file.filename}`;
+        const imagemURL = req.file.path;
 
         const novoProduto = await prisma.produto.create({
             data: {
                 nome,
                 descricao,
-                imagem: imagemPath,
+                imagem: imagemURL,
                 tamanhos: tamanhosArray
             }
         });
@@ -92,12 +92,11 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
         res.status(201).json(novoProduto);
     } catch (error) {
         console.error('Erro ao criar produto:', error);
-        if (req.file) {
-            fs.unlinkSync(req.file.path);
-        }
+
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 });
+
 router.delete('/:id', async (req, res): Promise<any> => {
     const id = Number(req.params.id);
     if (isNaN(id)) {
