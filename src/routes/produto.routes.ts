@@ -1,12 +1,36 @@
 import { Router } from 'express';
-import { pool } from '../db/connection';
 import { PrismaClient } from '@prisma/client';
 import upload from '../config/multer';
 import fs from 'fs';
+import { v2 as cloudinary } from 'cloudinary';
 
 const router = Router();
 const prisma = new PrismaClient();
 
+type CloudinaryUploadResult = {
+    public_id: string;
+    version: number;
+    signature: string;
+    width: number;
+    height: number;
+    format: string;
+    resource_type: string;
+    created_at: string;
+    tags: string[];
+    bytes: number;
+    type: string;
+    etag: string;
+    url: string;
+    secure_url: string;
+    // ... outros campos que você usar
+};
+
+
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 router.get('/', async (_, res) => {
     try {
         const produtos = await prisma.produto.findMany({
@@ -78,53 +102,63 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
         }
 
         const { nome, descricao, tamanhos } = req.body;
+        if (!nome) return res.status(400).json({ error: 'Nome é obrigatório' });
+        if (!tamanhos) return res.status(400).json({ error: 'Tamanhos são obrigatórios' });
 
-        if (!nome) {
-
-            return res.status(400).json({ error: 'Nome é obrigatório' });
-        }
-
-        if (!tamanhos) {
-
-            return res.status(400).json({ error: 'Tamanhos são obrigatórios' });
-        }
         let tamanhosArray;
         try {
             tamanhosArray = JSON.parse(tamanhos);
-            if (!Array.isArray(tamanhosArray)) {
-                throw new Error('Formato inválido');
-            }
-        } catch (e) {
-
+            if (!Array.isArray(tamanhosArray)) throw new Error('Formato inválido');
+        } catch {
             return res.status(400).json({ error: 'Formato de tamanhos inválido' });
         }
-
 
         const tamanhosInvalidos = tamanhosArray.some(t =>
             !t.nome || typeof t.nome !== 'string' ||
             typeof t.preco !== 'number' || isNaN(t.preco)
         );
+        if (tamanhosInvalidos) return res.status(400).json({ error: 'Dados de tamanhos inválidos' });
 
-        if (tamanhosInvalidos) {
+        // Upload para Cloudinary usando buffer do multer
+        const uploadResult = await cloudinary.uploader.upload_stream(
+            { folder: 'produtos' },
+            (error, result) => {
+                if (error) throw error;
+                return result;
+            }
+        );
 
-            return res.status(400).json({ error: 'Dados de tamanhos inválidos' });
-        }
 
-        const imagemURL = req.file.path;
+        const streamUpload = (fileBuffer: Buffer): Promise<CloudinaryUploadResult> => {
+            return new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    { folder: 'produtos' },
+                    (error, result) => {
+                        if (error) return reject(error);
+                        if (!result) return reject(new Error('Upload retornou nulo'));
 
+
+                        resolve(result as CloudinaryUploadResult);
+                    }
+                );
+                stream.end(fileBuffer);
+            });
+        };
+
+
+        const result = await streamUpload(req.file.buffer);
         const novoProduto = await prisma.produto.create({
             data: {
                 nome,
                 descricao,
-                imagem: imagemURL,
-                tamanhos: tamanhosArray
-            }
+                imagem: result.secure_url,
+                tamanhos: tamanhosArray,
+            },
         });
 
         res.status(201).json(novoProduto);
     } catch (error) {
         console.error('Erro ao criar produto:', error);
-
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 });
