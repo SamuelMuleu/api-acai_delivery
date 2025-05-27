@@ -192,7 +192,7 @@ router.delete('/:id', async (req, res): Promise<any> => {
     }
 
 });
-router.put('/:id', async (req, res): Promise<any> => {
+router.put('/:id', upload.single('imagem'), async (req, res): Promise<any> => {
     const id = Number(req.params.id);
     if (isNaN(id)) {
         return res.status(400).json({ error: 'ID inválido' });
