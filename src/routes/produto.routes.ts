@@ -13,16 +13,16 @@ router.get('/', async (_, res) => {
             include: {
                 complementos: {
                     include: {
-                        complemento: true // Inclui os detalhes dos complementos associados
+                        complemento: true
                     }
                 }
             },
             orderBy: {
-                criadoEm: 'desc' // Ordena do mais recente para o mais antigo
+                criadoEm: 'desc'
             }
         });
 
-        // Formata os tamanhos (que estão como JSON no banco)
+
         const produtosFormatados = produtos.map(produto => ({
             ...produto,
             tamanhos: produto.tamanhos as Array<{ tamanho: string; preco: number }>

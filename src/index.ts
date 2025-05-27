@@ -13,7 +13,9 @@ app.use(cors());
 
 const uploadDir = path.join(__dirname, 'public/uploads');
 require('fs').mkdirSync(uploadDir, { recursive: true });
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+const publicUploadsPath = path.join(process.cwd(), 'public', 'uploads');
+
+app.use('/uploads', express.static(publicUploadsPath));
 app.use(express.json());
 
 app.use('/produtos', produtosRoutes);
@@ -27,3 +29,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
 });
+
