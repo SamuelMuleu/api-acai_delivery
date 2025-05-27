@@ -192,5 +192,57 @@ router.delete('/:id', async (req, res): Promise<any> => {
     }
 
 });
+router.put('/:id', async (req, res): Promise<any> => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+    try {
+        const produtoAtual = await prisma.produto.findUnique({ where: { id }, });
+
+        if (!produtoAtual) {
+            return res.status(404).json({ error: 'Produto não encontrado' });
+        }
+
+        const { nome, descricao, tamanhos } = req.body;
+        let tamanhosArray;
+        if (tamanhos) {
+            try {
+                tamanhosArray = JSON.parse(tamanhos);
+            } catch {
+                return res.status(400).json({ error: 'Formato de tamanhos inválido' });
+            }
+        }
+
+
+        const dadosAtualizados: any = {};
+        if (nome) dadosAtualizados.nome = nome;
+        if (descricao) dadosAtualizados.descricao = descricao;
+        if (tamanhosArray) dadosAtualizados.tamanhos = tamanhosArray;
+
+        if (req.file) {
+
+            dadosAtualizados.imagem = req.file.path;
+
+
+            if (produtoAtual.imagem) {
+                const imagemPath = `public${produtoAtual.imagem}`;
+                if (fs.existsSync(imagemPath)) {
+                    fs.unlinkSync(imagemPath);
+                }
+            }
+        }
+
+        const produtoAtualizado = await prisma.produto.update({
+            where: { id },
+            data: dadosAtualizados
+        });
+
+        res.json(produtoAtualizado);
+    } catch (error) {
+        console.error('Erro ao atualizar produto:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+});
 
 export default router;
