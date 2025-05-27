@@ -39,6 +39,38 @@ router.get('/', async (_, res) => {
         });
     }
 });
+router.get('/:id', async (req, res): Promise<any> => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    try {
+        const produto = await prisma.produto.findUnique({
+            where: { id },
+            include: {
+                complementos: {
+                    include: {
+                        complemento: true
+                    }
+                }
+            }
+        });
+
+        if (!produto) {
+            return res.status(404).json({ error: 'Produto não encontrado' });
+        }
+
+
+        produto.tamanhos = produto.tamanhos as Array<{ tamanho: string; preco: number }>;
+
+        res.json(produto);
+    } catch (error) {
+        console.error('Erro ao buscar produto por ID:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+})
+
 router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
     try {
         if (!req.file) {
