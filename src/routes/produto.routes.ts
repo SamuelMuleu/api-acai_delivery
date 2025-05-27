@@ -47,22 +47,35 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
 
         const { nome, descricao, tamanhos } = req.body;
 
-        if (!nome || !tamanhos) {
+        if (!nome) {
             fs.unlinkSync(req.file.path);
-            return res.status(400).json({ error: 'Nome e tamanhos são obrigatórios' });
+            return res.status(400).json({ error: 'Nome é obrigatório' });
         }
 
+        if (!tamanhos) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Tamanhos são obrigatórios' });
+        }
         let tamanhosArray;
         try {
-            tamanhosArray = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
+            tamanhosArray = JSON.parse(tamanhos);
+            if (!Array.isArray(tamanhosArray)) {
+                throw new Error('Formato inválido');
+            }
         } catch (e) {
             fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Formato de tamanhos inválido' });
         }
 
-        if (!Array.isArray(tamanhosArray) || tamanhosArray.some(t => !t.nome || typeof t.preco !== 'number')) {
+
+        const tamanhosInvalidos = tamanhosArray.some(t =>
+            !t.nome || typeof t.nome !== 'string' ||
+            typeof t.preco !== 'number' || isNaN(t.preco)
+        );
+
+        if (tamanhosInvalidos) {
             fs.unlinkSync(req.file.path);
-            return res.status(400).json({ error: 'Formato de tamanhos inválido' });
+            return res.status(400).json({ error: 'Dados de tamanhos inválidos' });
         }
 
         const imagemPath = `/uploads/${req.file.filename}`;
