@@ -1,7 +1,8 @@
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
-import multer from 'multer';
+import multer, { StorageEngine } from 'multer';
 import path from 'path';
-import cloudinary from './cloudinary'
+import { v2 as cloudinary } from 'cloudinary';
+
 
 
 
@@ -12,7 +13,7 @@ const storage = new CloudinaryStorage({
         allowed_formats: ['jpg', 'png', 'jpeg'],
         transformation: [{ width: 500, height: 500, crop: 'limit' }],
     },
-});
+}) as StorageEngine;
 
 const upload = multer({
     storage: storage,

@@ -19,6 +19,7 @@ app.use('/uploads', express.static(publicUploadsPath));
 app.use(express.json());
 
 app.use('/produtos', produtosRoutes);
+
 app.use('/pedidos', pedidosRoutes);
 app.use('/complementos', complementosRoutes);
 
