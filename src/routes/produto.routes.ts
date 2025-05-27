@@ -41,27 +41,30 @@ router.get('/', async (_, res) => {
 });
 router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
     try {
-
-
-
         if (!req.file) {
-            return res.status(400).json({ error: 'Nome e tamanhos são obrigatórios' });
+            return res.status(400).json({ error: 'Imagem é obrigatória' });
         }
+
         const { nome, descricao, tamanhos } = req.body;
 
-
-        // Validação básica
         if (!nome || !tamanhos) {
-            return res.status(400).json({ error: 'Dados inválidos' });
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Nome e tamanhos são obrigatórios' });
         }
-
 
         let tamanhosArray;
         try {
             tamanhosArray = typeof tamanhos === 'string' ? JSON.parse(tamanhos) : tamanhos;
         } catch (e) {
+            fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Formato de tamanhos inválido' });
         }
+
+        if (!Array.isArray(tamanhosArray) || tamanhosArray.some(t => !t.nome || typeof t.preco !== 'number')) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Formato de tamanhos inválido' });
+        }
+
         const imagemPath = `/uploads/${req.file.filename}`;
 
         const novoProduto = await prisma.produto.create({
