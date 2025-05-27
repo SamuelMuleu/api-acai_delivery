@@ -10,15 +10,17 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
-app.use(express.json());
 
 const uploadDir = path.join(__dirname, 'public/uploads');
 require('fs').mkdirSync(uploadDir, { recursive: true });
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+app.use(express.json());
 
 app.use('/produtos', produtosRoutes);
 app.use('/pedidos', pedidosRoutes);
 app.use('/complementos', complementosRoutes);
+
+
 
 
 const PORT = process.env.PORT || 3000;

@@ -47,7 +47,7 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
         if (!req.file) {
             return res.status(400).json({ error: 'Nome e tamanhos são obrigatórios' });
         }
-        const { nome, descricao, imagem, tamanhos } = req.body;
+        const { nome, descricao, tamanhos } = req.body;
 
 
         // Validação básica

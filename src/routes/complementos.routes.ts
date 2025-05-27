@@ -78,7 +78,7 @@ router.get('/', async (req, res) => {
     }
 });
 router.delete('/:id', async (req, res): Promise<any> => {
-    const id = Number(req.params.id);  // converte para number aqui
+    const id = Number(req.params.id);
 
     if (isNaN(id)) {
         return res.status(400).json({ error: 'ID inválido' });
