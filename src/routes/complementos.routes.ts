@@ -134,6 +134,33 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.get('/:id', async (req, res): Promise<any> => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+    try {
+        const complemento = await prisma.complemento.findUnique({
+            where: { id },
+        });
+        if (!complemento) {
+            return res.status(404).json({ error: 'Complemento não encontrado' });
+        }
+        res.json(complemento);
+    } catch (error) {
+        console.error('Erro ao recuperar complemento:', error);
+
+        if (error instanceof Error) {
+            return res.status(500).json({ error: error.message });
+        }
+
+        return res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+
+
+
+});
+
 
 /**
  * @swagger
