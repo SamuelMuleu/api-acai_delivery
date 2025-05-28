@@ -22,7 +22,6 @@ type CloudinaryUploadResult = {
     etag: string;
     url: string;
     secure_url: string;
-    // ... outros campos que você usar
 };
 
 
@@ -31,6 +30,24 @@ cloudinary.config({
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+
+/**
+ * @swagger
+ * /produtos:
+ *   get:
+ *     summary: Retorna todos os produtos
+ *     tags: [Produtos]
+ *     responses:
+ *       200:
+ *         description: Lista de produtos retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ */
 router.get('/', async (_, res) => {
     try {
         const produtos = await prisma.produto.findMany({
@@ -63,6 +80,28 @@ router.get('/', async (_, res) => {
         });
     }
 });
+
+
+
+/**
+ * @swagger
+ * /produtos/{id}:
+ *   get:
+ *     summary: Retorna um produto pelo ID
+ *     tags: [Produtos]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         description: ID do produto
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Produto encontrado
+ *       404:
+ *         description: Produto não encontrado
+ */
 router.get('/:id', async (req, res): Promise<any> => {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -94,6 +133,40 @@ router.get('/:id', async (req, res): Promise<any> => {
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 })
+
+
+
+/**
+ * @swagger
+ * /produtos:
+ *   post:
+ *     summary: Cria um novo produto
+ *     tags: [Produtos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nome:
+ *                 type: string
+ *                 example: Açaí Tropical
+ *               descricao:
+ *                 type: string
+ *                 example: Açaí com granola e frutas
+ *               tamanhos:
+ *                 type: string
+ *                 example: '[{"nome": "Pequeno", "preco": 10.0}]'
+ *               imagem:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201:
+ *         description: Produto criado com sucesso
+ *       400:
+ *         description: Erro de validação nos dados enviados
+ */
 
 router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
     try {
@@ -163,6 +236,29 @@ router.post('/', upload.single('imagem'), async (req, res): Promise<any> => {
     }
 });
 
+
+
+
+
+/**
+ * @swagger
+ * /produtos/{id}:
+ *   delete:
+ *     summary: Remove um produto
+ *     tags: [Produtos]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: ID do produto a ser removido
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Produto excluído com sucesso
+ *       404:
+ *         description: Produto não encontrado
+ */
 router.delete('/:id', async (req, res): Promise<any> => {
     const id = Number(req.params.id);
     if (isNaN(id)) {
@@ -192,6 +288,46 @@ router.delete('/:id', async (req, res): Promise<any> => {
     }
 
 });
+
+
+
+/**
+ * @swagger
+ * /produtos/{id}:
+ *   put:
+ *     summary: Atualiza um produto existente
+ *     tags: [Produtos]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: ID do produto
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nome:
+ *                 type: string
+ *               descricao:
+ *                 type: string
+ *               tamanhos:
+ *                 type: string
+ *                 example: '[{"nome":"Médio","preco":12.0}]'
+ *               imagem:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Produto atualizado com sucesso
+ *       404:
+ *         description: Produto não encontrado
+ */
+
 router.put('/:id', upload.single('imagem'), async (req, res): Promise<any> => {
     const id = Number(req.params.id);
     if (isNaN(id)) {

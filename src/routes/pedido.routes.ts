@@ -6,6 +6,63 @@ const router = Router();
 const prisma = new PrismaClient();
 
 
+/**
+ * @swagger
+ * /pedidos:
+ *   get:
+ *     summary: Lista todos os pedidos
+ *     tags:
+ *       - Pedidos
+ *     responses:
+ *       200:
+ *         description: Lista de pedidos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   nomeCliente:
+ *                     type: string
+ *                   telefone:
+ *                     type: string
+ *                   endereco:
+ *                     type: string
+ *                   metodoPagamento:
+ *                     type: string
+ *                   status:
+ *                     type: string
+ *                   criadoEm:
+ *                     type: string
+ *                     format: date-time
+ *                   produtos:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         produto:
+ *                           type: object
+ *                         tamanho:
+ *                           type: string
+ *                         preco:
+ *                           type: number
+ *                         complementos:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *       500:
+ *         description: Erro interno do servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 
 router.get('/', async (_, res) => {
     try {
@@ -21,6 +78,128 @@ router.get('/', async (_, res) => {
     }
 });
 
+
+/**
+ * @swagger
+ * /pedidos:
+ *   post:
+ *     summary: Cria um novo pedido
+ *     tags:
+ *       - Pedidos
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nomeCliente
+ *               - telefone
+ *               - endereco
+ *               - metodoPagamento
+ *               - produtos
+ *             properties:
+ *               nomeCliente:
+ *                 type: string
+ *               telefone:
+ *                 type: string
+ *               endereco:
+ *                 type: string
+ *               metodoPagamento:
+ *                 type: string
+ *               produtos:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - produtoId
+ *                     - tamanho
+ *                   properties:
+ *                     produtoId:
+ *                       type: integer
+ *                     tamanho:
+ *                       type: string
+ *                     complementos:
+ *                       type: array
+ *                       items:
+ *                         type: integer
+ *     responses:
+ *       201:
+ *         description: Pedido criado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: integer
+ *                 nomeCliente:
+ *                   type: string
+ *                 telefone:
+ *                   type: string
+ *                 endereco:
+ *                   type: string
+ *                 metodoPagamento:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                 criadoEm:
+ *                   type: string
+ *                   format: date-time
+ *                 produtos:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       produto:
+ *                         type: object
+ *                       tamanho:
+ *                         type: string
+ *                       preco:
+ *                         type: number
+ *                       complementos:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                 detalhesPrecos:
+ *                   type: object
+ *                   properties:
+ *                     valorTotal:
+ *                       type: number
+ *                     itens:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           produtoId:
+ *                             type: integer
+ *                           precoBase:
+ *                             type: number
+ *                           precoComplementos:
+ *                             type: number
+ *                           precoTotal:
+ *                             type: number
+ *       400:
+ *         description: Dados incompletos ou inválidos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *       500:
+ *         description: Erro interno do servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ */
 
 // Criar novo pedido
 router.post('/', async (req, res): Promise<any> => {
@@ -53,7 +232,7 @@ router.post('/', async (req, res): Promise<any> => {
 
                 // Encontrar o preço do tamanho selecionado
                 const tamanhosArray = produtoInfo.tamanhos as unknown as Array<{
-                    tamanho: string;
+                    nome: string;
                     preco: number;
                 }>;
 

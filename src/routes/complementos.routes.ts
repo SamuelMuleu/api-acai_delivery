@@ -6,11 +6,49 @@ const router = Router();
 const prisma = new PrismaClient();
 
 // Rota POST para criar múltiplos complementos
+
+/**
+ * @swagger
+ * /complementos:
+ *   post:
+ *     summary: Cria múltiplos complementos
+ *     tags: [Complementos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               type: object
+ *               properties:
+ *                 nome:
+ *                   type: string
+ *                   example: Granola
+ *                 tipo:
+ *                   type: string
+ *                   enum: [ADICIONAL, INCLUSAO]  # Altere conforme seus enums
+ *                   example: ADICIONAL
+ *                 preco:
+ *                   type: number
+ *                   example: 2.5
+ *                 ativo:
+ *                   type: boolean
+ *                   example: true
+ *     responses:
+ *       201:
+ *         description: Complementos criados com sucesso
+ *       400:
+ *         description: Dados inválidos ou incompletos
+ *       500:
+ *         description: Erro interno do servidor
+ */
+
 router.post('/', async (req, res): Promise<any> => {
     try {
         const complementosData = req.body;
 
-        // Validação básica
+
         if (!Array.isArray(complementosData)) {
             return res.status(400).json({ error: 'O corpo da requisição deve ser um array de complementos' });
         }
@@ -31,7 +69,7 @@ router.post('/', async (req, res): Promise<any> => {
             }
         }
 
-        // Criar complementos no banco de dados
+
         const complementosCriados = await Promise.all(
             complementosData.map(complemento =>
                 prisma.complemento.create({
@@ -64,6 +102,24 @@ router.post('/', async (req, res): Promise<any> => {
 });
 
 // Rota GET para listar todos os complementos
+
+/**
+ * @swagger
+ * /complementos:
+ *   get:
+ *     summary: Lista todos os complementos
+ *     tags: [Complementos]
+ *     responses:
+ *       200:
+ *         description: Lista de complementos retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ */
+
 router.get('/', async (req, res) => {
     try {
         const complementos = await prisma.complemento.findMany({
@@ -77,6 +133,30 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 });
+
+
+/**
+ * @swagger
+ * /complementos/{id}:
+ *   delete:
+ *     summary: Remove um complemento pelo ID
+ *     tags: [Complementos]
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         description: ID do complemento a ser excluído
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Complemento excluído com sucesso
+ *       400:
+ *         description: ID inválido
+ *       500:
+ *         description: Erro interno do servidor
+ */
+
 router.delete('/:id', async (req, res): Promise<any> => {
     const id = Number(req.params.id);
 
