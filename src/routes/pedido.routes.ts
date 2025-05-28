@@ -232,7 +232,7 @@ router.post('/', async (req, res): Promise<any> => {
 
                 // Encontrar o preço do tamanho selecionado
                 const tamanhosArray = produtoInfo.tamanhos as unknown as Array<{
-                    nome: string;
+                    tamanho: string;
                     preco: number;
                 }>;
 
