@@ -212,61 +212,74 @@ router.post('/', async (req, res): Promise<any> => {
             produtos
         } = req.body;
 
-        // Validação básica
-        if (!nomeCliente || !telefone || !endereco || !metodoPagamento || !produtos) {
-            return res.status(400).json({ error: 'Dados incompletos' });
+        if (!nomeCliente || !telefone || !endereco || !metodoPagamento || !produtos || !Array.isArray(produtos) || produtos.length === 0) {
+            return res.status(400).json({ error: 'Dados incompletos ou inválidos para o pedido.' });
         }
 
-        // Calcular valor total com complementos
         let valorTotal = 0;
         const produtosComPrecos = await Promise.all(
-            produtos.map(async (produto: any) => {
-                // Buscar o produto no banco para verificar preço base
+            produtos.map(async (produtoReqItem: any) => {
+                if (!produtoReqItem || typeof produtoReqItem.produtoId !== 'number' || typeof produtoReqItem.tamanho !== 'string') {
+                    throw new Error('Item de produto inválido na requisição.');
+                }
+
                 const produtoInfo = await prisma.produto.findUnique({
-                    where: { id: produto.produtoId }
+                    where: { id: produtoReqItem.produtoId }
                 });
 
                 if (!produtoInfo) {
-                    throw new Error(`Produto com ID ${produto.produtoId} não encontrado`);
+                    throw new Error(`Produto com ID ${produtoReqItem.produtoId} não encontrado.`);
                 }
 
-                // Encontrar o preço do tamanho selecionado
+
                 const tamanhosArray = produtoInfo.tamanhos as unknown as Array<{
-                    tamanho: string;
+                    nome: string;
                     preco: number;
                 }>;
 
-                const tamanhoSelecionado = tamanhosArray.find(t => t.tamanho === produto.tamanho);
+                const tamanhoSelecionado = tamanhosArray.find(t => t.nome === produtoReqItem.tamanho);
+
                 if (!tamanhoSelecionado) {
-                    throw new Error(`Tamanho ${produto.tamanho} não disponível para o produto`);
+                    console.error(`Tamanho "${produtoReqItem.tamanho}" não encontrado para produto ID ${produtoReqItem.produtoId}. Tamanhos disponíveis no BD:`, tamanhosArray);
+                    throw new Error(`Tamanho "${produtoReqItem.tamanho}" não disponível para o produto "${produtoInfo.nome}".`);
                 }
 
-                let precoProduto = tamanhoSelecionado.preco;
-                let precoComplementos = 0;
+                let precoProdutoBase = tamanhoSelecionado.preco;
+                let precoTotalComplementos = 0;
 
-                // Calcular preço dos complementos se existirem
-                if (produto.complementos && produto.complementos.length > 0) {
-                    const complementos = await prisma.complemento.findMany({
-                        where: { id: { in: produto.complementos } }
+                if (produtoReqItem.complementos && Array.isArray(produtoReqItem.complementos) && produtoReqItem.complementos.length > 0) {
+                    const complementosIds = produtoReqItem.complementos.filter((id: any) => typeof id === 'number');
+                    if (complementosIds.length !== produtoReqItem.complementos.length) {
+                        throw new Error('Array de complementos contém IDs inválidos.');
+                    }
+
+                    const complementosInfo = await prisma.complemento.findMany({
+                        where: { id: { in: complementosIds } }
                     });
 
-                    // Cálculo de preços de complementos (agora funcionará)
-                    precoComplementos = complementos.reduce((total, complemento) => {
-                        return total + complemento.preco; // Agora preco existe no tipo Complemento
+                    if (complementosInfo.length !== complementosIds.length) {
+                        const foundIds = complementosInfo.map(c => c.id);
+                        const notFoundIds = complementosIds.filter((id: number) => !foundIds.includes(id));
+                        throw new Error(`Complemento(s) com ID(s) ${notFoundIds.join(', ')} não encontrado(s).`);
+                    }
+
+                    precoTotalComplementos = complementosInfo.reduce((total, complemento) => {
+                        return total + complemento.preco;
                     }, 0);
-
-                    const precoTotalItem = precoProduto + precoComplementos;
-                    valorTotal += precoTotalItem;
-
-                    return {
-                        ...produto,
-                        preco: precoTotalItem, // Atualiza com preço total (produto + complementos)
-                        precoBase: precoProduto,
-                        precoComplementos
-                    };
                 }
-            })
 
+                const precoFinalItem = precoProdutoBase + precoTotalComplementos;
+                valorTotal += precoFinalItem;
+
+                return {
+                    produtoId: produtoReqItem.produtoId,
+                    tamanho: produtoReqItem.tamanho,
+                    complementos: produtoReqItem.complementos?.filter((id: any) => typeof id === 'number') || [],
+                    preco: precoFinalItem,
+                    precoBase: precoProdutoBase,
+                    precoComplementos: precoTotalComplementos
+                };
+            })
         );
 
         // Criar pedido no banco de dados
@@ -277,14 +290,13 @@ router.post('/', async (req, res): Promise<any> => {
                 endereco,
                 metodoPagamento,
                 status: 'pendente',
-
                 produtos: {
-                    create: produtosComPrecos.map(produto => ({
-                        produto: { connect: { id: produto.produtoId } },
-                        tamanho: produto.tamanho,
-                        preco: produto.preco, // Já inclui complementos
+                    create: produtosComPrecos.map(produtoProcessado => ({
+                        produto: { connect: { id: produtoProcessado.produtoId } },
+                        tamanho: produtoProcessado.tamanho,
+                        preco: produtoProcessado.preco,
                         complementos: {
-                            create: produto.complementos?.map((complementoId: Number) => ({
+                            create: produtoProcessado.complementos?.map((complementoId: number) => ({
                                 complemento: { connect: { id: complementoId } }
                             }))
                         }
@@ -311,6 +323,7 @@ router.post('/', async (req, res): Promise<any> => {
                 valorTotal,
                 itens: produtosComPrecos.map(p => ({
                     produtoId: p.produtoId,
+                    // nomeProduto
                     precoBase: p.precoBase,
                     precoComplementos: p.precoComplementos,
                     precoTotal: p.preco
@@ -319,9 +332,10 @@ router.post('/', async (req, res): Promise<any> => {
         });
     } catch (error: unknown) {
         console.error('Erro ao criar pedido:', error);
+        const message = error instanceof Error ? error.message : 'Ocorreu um erro desconhecido.';
         res.status(500).json({
             error: 'Erro interno do servidor',
-            message: error
+            message: message
         });
     }
 });
