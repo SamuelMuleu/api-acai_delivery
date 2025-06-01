@@ -64,7 +64,7 @@ router.get('/', async (_, res) => {
         });
 
 
-        const produtosFormatados = produtos.map(produto => ({
+        const produtosFormatados = produtos.map((produto:any ) => ({
             ...produto,
             tamanhos: produto.tamanhos as Array<{ tamanho: string; preco: number }>
         }));

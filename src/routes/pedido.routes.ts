@@ -76,7 +76,7 @@ router.get('/', async (_, res) => {
                         produto: true, 
                         complementos: {
                             include: {
-                                complemento: true 
+                                complemento: true
                             }
                         }
                     }
@@ -89,6 +89,49 @@ router.get('/', async (_, res) => {
     }
 });
 
+router.get('/:id', async(req,res):Promise<any>=>{
+ const id = Number(req.params.id);
+  if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID inválido' });
+    }
+  try {
+        const pedido = await prisma.pedido.findUnique({
+            where: { id },
+            include: {
+               produtos: {
+          include: {
+            produto: true,    
+            
+            complementos: {   
+                
+              include: {
+                complemento: true
+                
+              }
+            }
+        }}}
+
+        });
+
+        if (!pedido) {
+            return res.status(404).json({ error: 'Pedido não encontrado' });
+        }
+
+         let valorTotalCalculado = 0;
+ if (pedido.produtos) {
+      valorTotalCalculado = pedido.produtos.reduce((acc:any, item:any) => {
+     
+        return acc + item.preco; 
+ }
+)}
+     
+
+        res.json(pedido);
+    } catch (error) {
+        console.error('Erro ao buscar Pedido por ID:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+})
 
 /**
  * @swagger
