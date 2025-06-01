@@ -90,10 +90,8 @@ router.get('/', async (_, res) => {
 });
 
 router.get('/:id', async(req,res):Promise<any>=>{
- const id = Number(req.params.id);
-  if (isNaN(id)) {
-        return res.status(400).json({ error: 'ID inválido' });
-    }
+ const id = req.params.id;
+
   try {
         const pedido = await prisma.pedido.findUnique({
             where: { id },
