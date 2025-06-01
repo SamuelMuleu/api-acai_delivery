@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { PedidoStatus } from '@prisma/client';
+
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -69,11 +69,22 @@ router.get('/', async (_, res) => {
         const pedidos = await prisma.pedido.findMany({
             orderBy: {
                 criadoEm: 'asc'
-            }
+            },
+             include: { 
+                produtos: { 
+                    include: {
+                        produto: true, 
+                        complementos: {
+                            include: {
+                                complemento: true 
+                            }
+                        }
+                    }
+                }}
         });
         res.json(pedidos);
     } catch (error: unknown) {
-        console.error('Erro ao buscar complementos:', error);
+        console.error('Erro ao buscar pedidos:', error);
         res.status(500).json({ error: 'Erro interno do servidor' });
     }
 });
@@ -258,12 +269,12 @@ router.post('/', async (req, res): Promise<any> => {
                     });
 
                     if (complementosInfo.length !== complementosIds.length) {
-                        const foundIds = complementosInfo.map(c => c.id);
+                        const foundIds = complementosInfo.map((c:any) => c.id);
                         const notFoundIds = complementosIds.filter((id: number) => !foundIds.includes(id));
                         throw new Error(`Complemento(s) com ID(s) ${notFoundIds.join(', ')} não encontrado(s).`);
                     }
 
-                    precoTotalComplementos = complementosInfo.reduce((total, complemento) => {
+                    precoTotalComplementos = complementosInfo.reduce((total:any, complemento:any) => {
                         return total + complemento.preco;
                     }, 0);
                 }
