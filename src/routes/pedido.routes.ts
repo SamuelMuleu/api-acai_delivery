@@ -90,11 +90,16 @@ router.get('/', async (_, res) => {
 });
 
 router.get('/:id', async(req,res):Promise<any>=>{
- const id = req.params.id;
+  const idParam = req.params.id;
+    const id = parseInt(idParam, 10);
+
+    if (isNaN(id)) {
+        return res.status(400).json({ error: 'ID do pedido inválido. Deve ser um número.' });
+    }
 
   try {
         const pedido = await prisma.pedido.findUnique({
-            where: { id },
+            where: { id:id },
             include: {
                produtos: {
           include: {
@@ -117,7 +122,7 @@ router.get('/:id', async(req,res):Promise<any>=>{
 
          let valorTotalCalculado = 0;
  if (pedido.produtos) {
-      valorTotalCalculado = pedido.produtos.reduce((acc:any, item:any) => {
+      valorTotalCalculado = pedido.produtos.reduce((acc:number, item:any) => {
      
         return acc + item.preco; 
  }
