@@ -120,13 +120,8 @@ router.get('/:id', async(req,res):Promise<any>=>{
             return res.status(404).json({ error: 'Pedido não encontrado' });
         }
 
-         let valorTotalCalculado = 0;
- if (pedido.produtos) {
-      valorTotalCalculado = pedido.produtos.reduce((acc:number, item:any) => {
-     
-        return acc + item.preco; 
- }
-)}
+       
+
      
 
         res.json(pedido);
