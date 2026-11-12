@@ -1,394 +1,249 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
-
+import { MetodoPagamento, PedidoStatus, Prisma } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+import { isAdminRequest, requireAdmin } from '../lib/auth';
 
 const router = Router();
-const prisma = new PrismaClient();
 
+const includeItens = {
+    produtos: {
+        include: {
+            produto: { select: { id: true, nome: true, imagem: true } },
+            complementos: { include: { complemento: true } },
+        },
+    },
+} satisfies Prisma.PedidoInclude;
+
+type PedidoComItens = Prisma.PedidoGetPayload<{ include: typeof includeItens }>;
+
+const withTotal = (pedido: PedidoComItens) => ({
+    ...pedido,
+    // preco de cada item já inclui os complementos
+    total: Number(pedido.produtos.reduce((sum, item) => sum + item.preco, 0).toFixed(2)),
+});
+
+class HttpError extends Error {
+    constructor(public status: number, message: string) {
+        super(message);
+    }
+}
+
+const MAX_ITENS = 50;
+const text = (value: unknown, max: number) =>
+    typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max ? value.trim() : null;
 
 /**
  * @swagger
  * /pedidos:
  *   get:
- *     summary: Lista todos os pedidos
- *     tags:
- *       - Pedidos
+ *     summary: Lista os pedidos (admin)
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200:
- *         description: Lista de pedidos
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   id:
- *                     type: integer
- *                   nomeCliente:
- *                     type: string
- *                   telefone:
- *                     type: string
- *                   endereco:
- *                     type: string
- *                   metodoPagamento:
- *                     type: string
- *                   status:
- *                     type: string
- *                   criadoEm:
- *                     type: string
- *                     format: date-time
- *                   produtos:
- *                     type: array
- *                     items:
- *                       type: object
- *                       properties:
- *                         produto:
- *                           type: object
- *                         tamanho:
- *                           type: string
- *                         preco:
- *                           type: number
- *                         complementos:
- *                           type: array
- *                           items:
- *                             type: object
- *       500:
- *         description: Erro interno do servidor
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *       200: { description: Lista de pedidos, mais recentes primeiro, com total }
+ *       401: { description: Não autenticado }
  */
-
-router.get('/', async (_, res) => {
-    try {
-        const pedidos = await prisma.pedido.findMany({
-            orderBy: {
-                criadoEm: 'asc'
-            },
-             include: { 
-                produtos: { 
-                    include: {
-                        produto: true, 
-                        complementos: {
-                            include: {
-                                complemento: true
-                            }
-                        }
-                    }
-                }}
-        });
-        res.json(pedidos);
-    } catch (error: unknown) {
-        console.error('Erro ao buscar pedidos:', error);
-        res.status(500).json({ error: 'Erro interno do servidor' });
-    }
+router.get('/', requireAdmin, async (_req, res) => {
+    const pedidos = await prisma.pedido.findMany({ orderBy: { criadoEm: 'desc' }, include: includeItens });
+    res.json(pedidos.map(withTotal));
 });
 
-router.get('/:id', async(req,res):Promise<any>=>{
-  const idParam = req.params.id;
-    const id = parseInt(idParam, 10);
-
-    if (isNaN(id)) {
-        return res.status(400).json({ error: 'ID do pedido inválido. Deve ser um número.' });
+/**
+ * @swagger
+ * /pedidos/{id}:
+ *   get:
+ *     summary: Acompanha um pedido. Sem token, telefone e endereço são omitidos.
+ *     tags: [Pedidos]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Pedido }
+ *       404: { description: Pedido não encontrado }
+ */
+router.get('/:id', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+        res.status(400).json({ error: 'ID do pedido inválido.' });
+        return;
     }
-
-  try {
-        const pedido = await prisma.pedido.findUnique({
-            where: { id:id },
-            include: {
-               produtos: {
-          include: {
-            produto: true,    
-            
-            complementos: {   
-                
-              include: {
-                complemento: true
-                
-              }
-            }
-        }}}
-
-        });
-
-        if (!pedido) {
-            return res.status(404).json({ error: 'Pedido não encontrado' });
-        }
-
-       
-
-     
-
-        res.json(pedido);
-    } catch (error) {
-        console.error('Erro ao buscar Pedido por ID:', error);
-        res.status(500).json({ error: 'Erro interno do servidor' });
+    const pedido = await prisma.pedido.findUnique({ where: { id }, include: includeItens });
+    if (!pedido) {
+        res.status(404).json({ error: 'Pedido não encontrado.' });
+        return;
     }
-})
+    const result = withTotal(pedido);
+    if (isAdminRequest(req)) {
+        res.json(result);
+        return;
+    }
+    // Public tracking: never expose the customer's contact data
+    const { telefone: _t, endereco: _e, ...publico } = result;
+    res.json({ ...publico, nomeCliente: pedido.nomeCliente.split(' ')[0] });
+});
 
 /**
  * @swagger
  * /pedidos:
  *   post:
- *     summary: Cria um novo pedido
- *     tags:
- *       - Pedidos
+ *     summary: Cria um pedido. Os preços são calculados no servidor.
+ *     tags: [Pedidos]
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - nomeCliente
- *               - telefone
- *               - endereco
- *               - metodoPagamento
- *               - produtos
+ *             required: [nomeCliente, telefone, endereco, metodoPagamento, produtos]
  *             properties:
- *               nomeCliente:
- *                 type: string
- *               telefone:
- *                 type: string
- *               endereco:
- *                 type: string
- *               metodoPagamento:
- *                 type: string
+ *               nomeCliente: { type: string }
+ *               telefone: { type: string }
+ *               endereco: { type: string }
+ *               metodoPagamento: { type: string, enum: [pix, dinheiro, cartao] }
+ *               trocoPara: { type: number }
  *               produtos:
  *                 type: array
  *                 items:
  *                   type: object
- *                   required:
- *                     - produtoId
- *                     - tamanho
+ *                   required: [produtoId, tamanho]
  *                   properties:
- *                     produtoId:
- *                       type: integer
- *                     tamanho:
- *                       type: string
- *                     complementos:
- *                       type: array
- *                       items:
- *                         type: integer
+ *                     produtoId: { type: integer }
+ *                     tamanho: { type: string }
+ *                     quantidade: { type: integer, default: 1 }
+ *                     complementos: { type: array, items: { type: integer } }
  *     responses:
- *       201:
- *         description: Pedido criado com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 id:
- *                   type: integer
- *                 nomeCliente:
- *                   type: string
- *                 telefone:
- *                   type: string
- *                 endereco:
- *                   type: string
- *                 metodoPagamento:
- *                   type: string
- *                 status:
- *                   type: string
- *                 criadoEm:
- *                   type: string
- *                   format: date-time
- *                 produtos:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       produto:
- *                         type: object
- *                       tamanho:
- *                         type: string
- *                       preco:
- *                         type: number
- *                       complementos:
- *                         type: array
- *                         items:
- *                           type: object
- *                 detalhesPrecos:
- *                   type: object
- *                   properties:
- *                     valorTotal:
- *                       type: number
- *                     itens:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           produtoId:
- *                             type: integer
- *                           precoBase:
- *                             type: number
- *                           precoComplementos:
- *                             type: number
- *                           precoTotal:
- *                             type: number
- *       400:
- *         description: Dados incompletos ou inválidos
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *       500:
- *         description: Erro interno do servidor
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
- *                 message:
- *                   type: string
+ *       201: { description: Pedido criado (com total) }
+ *       400: { description: Dados inválidos }
  */
+router.post('/', async (req, res) => {
+    const body = req.body ?? {};
+    const nomeCliente = text(body.nomeCliente, 120);
+    const telefone = typeof body.telefone === 'string' ? body.telefone.replace(/\D/g, '') : '';
+    const endereco = text(body.endereco, 300);
+    const metodoPagamento = body.metodoPagamento as MetodoPagamento;
+    const produtos = body.produtos;
 
-// Criar novo pedido
-router.post('/', async (req, res): Promise<any> => {
+    if (!nomeCliente) return void res.status(400).json({ error: 'Informe o nome do cliente.' });
+    if (!/^\d{10,11}$/.test(telefone)) return void res.status(400).json({ error: 'Telefone inválido (DDD + número).' });
+    if (!endereco) return void res.status(400).json({ error: 'Informe o endereço de entrega.' });
+    if (!Object.values(MetodoPagamento).includes(metodoPagamento)) {
+        return void res.status(400).json({ error: 'Método de pagamento inválido.', validos: Object.values(MetodoPagamento) });
+    }
+    if (!Array.isArray(produtos) || produtos.length === 0) {
+        return void res.status(400).json({ error: 'O pedido precisa ter ao menos um produto.' });
+    }
+
     try {
-        const {
-            nomeCliente,
-            telefone,
-            endereco,
-            metodoPagamento,
-            produtos
-        } = req.body;
+        // Expand quantities into individual items (each one keeps its own size and complements)
+        const itens: { produtoId: number; tamanho: string; complementos: number[] }[] = [];
+        for (const item of produtos) {
+            const quantidade = item?.quantidade === undefined ? 1 : Number(item.quantidade);
+            if (!Number.isInteger(item?.produtoId) || typeof item?.tamanho !== 'string' || !Number.isInteger(quantidade) || quantidade < 1) {
+                throw new HttpError(400, 'Item de produto inválido.');
+            }
+            const complementos = Array.isArray(item.complementos) ? item.complementos : [];
+            if (!complementos.every((c: unknown) => Number.isInteger(c))) throw new HttpError(400, 'Complementos inválidos.');
+            for (let i = 0; i < quantidade; i++) itens.push({ produtoId: item.produtoId, tamanho: item.tamanho, complementos });
+        }
+        if (itens.length > MAX_ITENS) throw new HttpError(400, `Máximo de ${MAX_ITENS} itens por pedido.`);
 
-        if (!nomeCliente || !telefone || !endereco || !metodoPagamento || !produtos || !Array.isArray(produtos) || produtos.length === 0) {
-            return res.status(400).json({ error: 'Dados incompletos ou inválidos para o pedido.' });
+        const produtoIds = [...new Set(itens.map((i) => i.produtoId))];
+        const complementoIds = [...new Set(itens.flatMap((i) => i.complementos))];
+        const [produtosDb, complementosDb] = await Promise.all([
+            prisma.produto.findMany({ where: { id: { in: produtoIds } } }),
+            prisma.complemento.findMany({ where: { id: { in: complementoIds }, ativo: true } }),
+        ]);
+
+        const precificados = itens.map((item) => {
+            const produto = produtosDb.find((p) => p.id === item.produtoId);
+            if (!produto) throw new HttpError(400, `Produto ${item.produtoId} não encontrado.`);
+            const tamanhos = produto.tamanhos as unknown as { nome: string; preco: number }[];
+            const tamanho = tamanhos.find((t) => t.nome === item.tamanho);
+            if (!tamanho) throw new HttpError(400, `Tamanho "${item.tamanho}" indisponível para ${produto.nome}.`);
+            const precoComplementos = item.complementos.reduce((sum, id) => {
+                const complemento = complementosDb.find((c) => c.id === id);
+                if (!complemento) throw new HttpError(400, `Complemento ${id} indisponível.`);
+                return sum + complemento.preco;
+            }, 0);
+            return { ...item, preco: Number((tamanho.preco + precoComplementos).toFixed(2)) };
+        });
+
+        const total = precificados.reduce((sum, i) => sum + i.preco, 0);
+        let trocoPara: number | null = null;
+        if (metodoPagamento === 'dinheiro' && body.trocoPara !== undefined && body.trocoPara !== null) {
+            trocoPara = Number(body.trocoPara);
+            if (!Number.isFinite(trocoPara) || trocoPara < total) {
+                throw new HttpError(400, 'O valor para troco deve ser maior ou igual ao total do pedido.');
+            }
         }
 
-        let valorTotal = 0;
-        const produtosComPrecos = await Promise.all(
-            produtos.map(async (produtoReqItem: any) => {
-                if (!produtoReqItem || typeof produtoReqItem.produtoId !== 'number' || typeof produtoReqItem.tamanho !== 'string') {
-                    throw new Error('Item de produto inválido na requisição.');
-                }
-
-                const produtoInfo = await prisma.produto.findUnique({
-                    where: { id: produtoReqItem.produtoId }
-                });
-
-                if (!produtoInfo) {
-                    throw new Error(`Produto com ID ${produtoReqItem.produtoId} não encontrado.`);
-                }
-
-
-                const tamanhosArray = produtoInfo.tamanhos as unknown as Array<{
-                    nome: string;
-                    preco: number;
-                }>;
-
-                const tamanhoSelecionado = tamanhosArray.find(t => t.nome === produtoReqItem.tamanho);
-
-                if (!tamanhoSelecionado) {
-                    console.error(`Tamanho "${produtoReqItem.tamanho}" não encontrado para produto ID ${produtoReqItem.produtoId}. Tamanhos disponíveis no BD:`, tamanhosArray);
-                    throw new Error(`Tamanho "${produtoReqItem.tamanho}" não disponível para o produto "${produtoInfo.nome}".`);
-                }
-
-                let precoProdutoBase = tamanhoSelecionado.preco;
-                let precoTotalComplementos = 0;
-
-                if (produtoReqItem.complementos && Array.isArray(produtoReqItem.complementos) && produtoReqItem.complementos.length > 0) {
-                    const complementosIds = produtoReqItem.complementos.filter((id: any) => typeof id === 'number');
-                    if (complementosIds.length !== produtoReqItem.complementos.length) {
-                        throw new Error('Array de complementos contém IDs inválidos.');
-                    }
-
-                    const complementosInfo = await prisma.complemento.findMany({
-                        where: { id: { in: complementosIds } }
-                    });
-
-                    if (complementosInfo.length !== complementosIds.length) {
-                        const foundIds = complementosInfo.map((c:any) => c.id);
-                        const notFoundIds = complementosIds.filter((id: number) => !foundIds.includes(id));
-                        throw new Error(`Complemento(s) com ID(s) ${notFoundIds.join(', ')} não encontrado(s).`);
-                    }
-
-                    precoTotalComplementos = complementosInfo.reduce((total:any, complemento:any) => {
-                        return total + complemento.preco;
-                    }, 0);
-                }
-
-                const precoFinalItem = precoProdutoBase + precoTotalComplementos;
-                valorTotal += precoFinalItem;
-
-                return {
-                    produtoId: produtoReqItem.produtoId,
-                    tamanho: produtoReqItem.tamanho,
-                    complementos: produtoReqItem.complementos?.filter((id: any) => typeof id === 'number') || [],
-                    preco: precoFinalItem,
-                    precoBase: precoProdutoBase,
-                    precoComplementos: precoTotalComplementos
-                };
-            })
-        );
-
-        // Criar pedido no banco de dados
-        const novoPedido = await prisma.pedido.create({
+        const pedido = await prisma.pedido.create({
             data: {
                 nomeCliente,
                 telefone,
                 endereco,
                 metodoPagamento,
-                status: 'pendente',
+                trocoPara,
                 produtos: {
-                    create: produtosComPrecos.map(produtoProcessado => ({
-                        produto: { connect: { id: produtoProcessado.produtoId } },
-                        tamanho: produtoProcessado.tamanho,
-                        preco: produtoProcessado.preco,
-                        complementos: {
-                            create: produtoProcessado.complementos?.map((complementoId: number) => ({
-                                complemento: { connect: { id: complementoId } }
-                            }))
-                        }
-                    }))
-                }
+                    create: precificados.map((item) => ({
+                        produto: { connect: { id: item.produtoId } },
+                        tamanho: item.tamanho,
+                        preco: item.preco,
+                        complementos: { create: item.complementos.map((id) => ({ complemento: { connect: { id } } })) },
+                    })),
+                },
             },
-            include: {
-                produtos: {
-                    include: {
-                        produto: true,
-                        complementos: {
-                            include: {
-                                complemento: true
-                            }
-                        }
-                    }
-                }
-            }
+            include: includeItens,
         });
 
-        res.status(201).json({
-            ...novoPedido,
-            detalhesPrecos: {
-                valorTotal,
-                itens: produtosComPrecos.map(p => ({
-                    produtoId: p.produtoId,
-                    // nomeProduto
-                    precoBase: p.precoBase,
-                    precoComplementos: p.precoComplementos,
-                    precoTotal: p.preco
-                }))
-            }
-        });
-    } catch (error: unknown) {
-        console.error('Erro ao criar pedido:', error);
-        const message = error instanceof Error ? error.message : 'Ocorreu um erro desconhecido.';
-        res.status(500).json({
-            error: 'Erro interno do servidor',
-            message: message
-        });
+        res.status(201).json(withTotal(pedido));
+    } catch (error) {
+        if (error instanceof HttpError) {
+            res.status(error.status).json({ error: error.message });
+            return;
+        }
+        throw error;
     }
 });
+
+/**
+ * @swagger
+ * /pedidos/{id}/status:
+ *   patch:
+ *     summary: Atualiza o status do pedido (admin)
+ *     tags: [Pedidos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status: { type: string, enum: [pendente, preparo, saiu, entregue] }
+ *     responses:
+ *       200: { description: Pedido atualizado }
+ *       400: { description: Status inválido }
+ *       404: { description: Pedido não encontrado }
+ */
+router.patch('/:id/status', requireAdmin, async (req, res) => {
+    const id = Number(req.params.id);
+    const status = req.body?.status as PedidoStatus;
+    if (!Number.isInteger(id) || id <= 0) return void res.status(400).json({ error: 'ID do pedido inválido.' });
+    if (!Object.values(PedidoStatus).includes(status)) {
+        return void res.status(400).json({ error: 'Status inválido.', validos: Object.values(PedidoStatus) });
+    }
+    try {
+        const pedido = await prisma.pedido.update({ where: { id }, data: { status }, include: includeItens });
+        res.json(withTotal(pedido));
+    } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            res.status(404).json({ error: 'Pedido não encontrado.' });
+            return;
+        }
+        throw error;
+    }
+});
+
 export default router;

@@ -1,18 +1,69 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { ComplementoTipo } from '@prisma/client';
+import { ComplementoTipo, Prisma } from '@prisma/client';
+import { prisma } from '../lib/prisma';
+import { isAdminRequest, requireAdmin } from '../lib/auth';
 
 const router = Router();
-const prisma = new PrismaClient();
 
-// Rota POST para criar múltiplos complementos
+const parseId = (value: string) => {
+    const id = Number(value);
+    return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+function validate(c: Record<string, unknown>, partial = false): string | null {
+    if ((!partial || c.nome !== undefined) && (typeof c.nome !== 'string' || !c.nome.trim())) return 'Nome é obrigatório.';
+    if ((!partial || c.tipo !== undefined) && !Object.values(ComplementoTipo).includes(c.tipo as ComplementoTipo)) {
+        return `Tipo inválido. Use: ${Object.values(ComplementoTipo).join(', ')}.`;
+    }
+    if ((!partial || c.preco !== undefined) && (typeof c.preco !== 'number' || c.preco < 0)) return 'Preço inválido.';
+    if (c.ativo !== undefined && typeof c.ativo !== 'boolean') return 'O campo ativo deve ser true ou false.';
+    return null;
+}
+
+/**
+ * @swagger
+ * /complementos:
+ *   get:
+ *     summary: Lista os complementos (inativos aparecem apenas para o admin)
+ *     tags: [Complementos]
+ *     responses:
+ *       200: { description: Lista de complementos }
+ */
+router.get('/', async (req, res) => {
+    const complementos = await prisma.complemento.findMany({
+        where: isAdminRequest(req) ? {} : { ativo: true },
+        orderBy: { nome: 'asc' },
+    });
+    res.json(complementos);
+});
+
+/**
+ * @swagger
+ * /complementos/{id}:
+ *   get:
+ *     summary: Retorna um complemento
+ *     tags: [Complementos]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Complemento }
+ *       404: { description: Não encontrado }
+ */
+router.get('/:id', async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) return void res.status(400).json({ error: 'ID inválido.' });
+    const complemento = await prisma.complemento.findUnique({ where: { id } });
+    if (!complemento) return void res.status(404).json({ error: 'Complemento não encontrado.' });
+    res.json(complemento);
+});
 
 /**
  * @swagger
  * /complementos:
  *   post:
- *     summary: Cria múltiplos complementos
+ *     summary: Cria um ou vários complementos (admin)
  *     tags: [Complementos]
+ *     security: [{ bearerAuth: [] }]
  *     requestBody:
  *       required: true
  *       content:
@@ -22,190 +73,94 @@ const prisma = new PrismaClient();
  *             items:
  *               type: object
  *               properties:
- *                 nome:
- *                   type: string
- *                   example: Granola
- *                 tipo:
- *                   type: string
- *                   enum: [ADICIONAL, INCLUSAO]  # Altere conforme seus enums
- *                   example: ADICIONAL
- *                 preco:
- *                   type: number
- *                   example: 2.5
- *                 ativo:
- *                   type: boolean
- *                   example: true
+ *                 nome: { type: string, example: Granola }
+ *                 tipo: { type: string, enum: [fruta, cobertura, adicional] }
+ *                 preco: { type: number, example: 2.5 }
+ *                 ativo: { type: boolean }
  *     responses:
- *       201:
- *         description: Complementos criados com sucesso
- *       400:
- *         description: Dados inválidos ou incompletos
- *       500:
- *         description: Erro interno do servidor
+ *       201: { description: Complementos criados }
+ *       400: { description: Dados inválidos }
  */
-
-router.post('/', async (req, res): Promise<any> => {
-    try {
-        const complementosData = req.body;
-
-
-        if (!Array.isArray(complementosData)) {
-            return res.status(400).json({ error: 'O corpo da requisição deve ser um array de complementos' });
-        }
-
-        for (const complemento of complementosData) {
-            if (!complemento.nome || !complemento.tipo || complemento.preco === undefined) {
-                return res.status(400).json({
-                    error: 'Cada complemento deve ter nome, tipo e preço',
-                    complementoInvalido: complemento
-                });
-            }
-
-            if (!Object.values(ComplementoTipo).includes(complemento.tipo)) {
-                return res.status(400).json({
-                    error: `Tipo de complemento inválido: ${complemento.tipo}`,
-                    tiposValidos: Object.values(ComplementoTipo)
-                });
-            }
-        }
-
-
-        const complementosCriados = await Promise.all(
-            complementosData.map(complemento =>
-                prisma.complemento.create({
-                    data: {
-                        nome: complemento.nome,
-                        tipo: complemento.tipo,
-                        preco: complemento.preco,
-                        ativo: complemento.ativo !== undefined ? complemento.ativo : true
-                    }
-                })
-            )
-        );
-
-        res.status(201).json(complementosCriados);
-    } catch (error: unknown) {
-        console.error('Erro ao criar complementos:', error);
-
-        let errorMessage = 'Erro interno do servidor';
-        if (error instanceof Error) {
-            errorMessage = error.message;
-        } else if (typeof error === 'string') {
-            errorMessage = error;
-        }
-
-        res.status(500).json({
-            error: 'Erro interno do servidor',
-            message: errorMessage
-        });
+router.post('/', requireAdmin, async (req, res) => {
+    const lista = Array.isArray(req.body) ? req.body : [req.body];
+    if (lista.length === 0) return void res.status(400).json({ error: 'Envie ao menos um complemento.' });
+    for (const c of lista) {
+        const error = validate(c ?? {});
+        if (error) return void res.status(400).json({ error, complemento: c });
     }
+    const criados = await prisma.$transaction(
+        lista.map((c) =>
+            prisma.complemento.create({
+                data: { nome: c.nome.trim(), tipo: c.tipo, preco: c.preco, ativo: c.ativo ?? true },
+            })
+        )
+    );
+    res.status(201).json(criados);
 });
-
-// Rota GET para listar todos os complementos
 
 /**
  * @swagger
- * /complementos:
- *   get:
- *     summary: Lista todos os complementos
+ * /complementos/{id}:
+ *   patch:
+ *     summary: Atualiza um complemento (admin)
  *     tags: [Complementos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: id, in: path, required: true, schema: { type: integer } }
  *     responses:
- *       200:
- *         description: Lista de complementos retornada com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
+ *       200: { description: Complemento atualizado }
+ *       404: { description: Não encontrado }
  */
-
-router.get('/', async (req, res) => {
+router.patch('/:id', requireAdmin, async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) return void res.status(400).json({ error: 'ID inválido.' });
+    const error = validate(req.body ?? {}, true);
+    if (error) return void res.status(400).json({ error });
+    const { nome, tipo, preco, ativo } = req.body;
     try {
-        const complementos = await prisma.complemento.findMany({
-            orderBy: {
-                nome: 'asc'
-            }
-        });
-        res.json(complementos);
-    } catch (error: unknown) {
-        console.error('Erro ao buscar complementos:', error);
-        res.status(500).json({ error: 'Erro interno do servidor' });
-    }
-});
-
-router.get('/:id', async (req, res): Promise<any> => {
-    const id = Number(req.params.id);
-    if (isNaN(id)) {
-        return res.status(400).json({ error: 'ID inválido' });
-    }
-    try {
-        const complemento = await prisma.complemento.findUnique({
+        const complemento = await prisma.complemento.update({
             where: { id },
+            data: { nome: nome?.trim(), tipo, preco, ativo },
         });
-        if (!complemento) {
-            return res.status(404).json({ error: 'Complemento não encontrado' });
-        }
         res.json(complemento);
-    } catch (error) {
-        console.error('Erro ao recuperar complemento:', error);
-
-        if (error instanceof Error) {
-            return res.status(500).json({ error: error.message });
+    } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+            return void res.status(404).json({ error: 'Complemento não encontrado.' });
         }
-
-        return res.status(500).json({ error: 'Erro interno do servidor' });
+        throw e;
     }
-
-
-
 });
-
 
 /**
  * @swagger
  * /complementos/{id}:
  *   delete:
- *     summary: Remove um complemento pelo ID
+ *     summary: Remove um complemento (admin). Se já foi usado em pedidos, é apenas desativado.
  *     tags: [Complementos]
+ *     security: [{ bearerAuth: [] }]
  *     parameters:
- *       - name: id
- *         in: path
- *         description: ID do complemento a ser excluído
- *         required: true
- *         schema:
- *           type: integer
+ *       - { name: id, in: path, required: true, schema: { type: integer } }
  *     responses:
- *       200:
- *         description: Complemento excluído com sucesso
- *       400:
- *         description: ID inválido
- *       500:
- *         description: Erro interno do servidor
+ *       200: { description: Complemento desativado (usado em pedidos) }
+ *       204: { description: Complemento removido }
+ *       404: { description: Não encontrado }
  */
-
-router.delete('/:id', async (req, res): Promise<any> => {
-    const id = Number(req.params.id);
-
-    if (isNaN(id)) {
-        return res.status(400).json({ error: 'ID inválido' });
+router.delete('/:id', requireAdmin, async (req, res) => {
+    const id = parseId(req.params.id);
+    if (!id) return void res.status(400).json({ error: 'ID inválido.' });
+    if (!(await prisma.complemento.findUnique({ where: { id } }))) {
+        return void res.status(404).json({ error: 'Complemento não encontrado.' });
     }
-
-    try {
-        const complemento = await prisma.complemento.delete({
-            where: { id },
-        });
-
-        res.json(complemento);
-    } catch (error) {
-        console.error('Erro ao excluir complemento:', error);
-
-        if (error instanceof Error) {
-            return res.status(500).json({ error: error.message });
-        }
-
-        return res.status(500).json({ error: 'Erro interno do servidor' });
+    // Keeps order history intact: complements already ordered are deactivated instead of deleted
+    if (await prisma.pedidoProdutoComplemento.count({ where: { complementoId: id } })) {
+        const complemento = await prisma.complemento.update({ where: { id }, data: { ativo: false } });
+        return void res.json({ ...complemento, aviso: 'Complemento usado em pedidos: foi desativado em vez de removido.' });
     }
+    await prisma.$transaction([
+        prisma.produtoComplemento.deleteMany({ where: { complementoId: id } }),
+        prisma.complemento.delete({ where: { id } }),
+    ]);
+    res.status(204).end();
 });
 
 export default router;

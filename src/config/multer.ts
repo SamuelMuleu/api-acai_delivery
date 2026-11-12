@@ -1,23 +1,13 @@
 import multer from 'multer';
-import path from 'path';
 
-// Armazena o arquivo localmente na memória (buffer)
-const storage = multer.memoryStorage();
-
+// Keeps the file in memory; it is streamed to Cloudinary afterwards
 const upload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // limite 5MB
-    fileFilter: (req, file, cb) => {
-        const filetypes = /jpeg|jpg|png|gif/;
-        const mimetype = filetypes.test(file.mimetype);
-        const extname = filetypes.test(
-            path.extname(file.originalname).toLowerCase()
-        );
-
-        if (mimetype && extname) {
-            return cb(null, true);
-        }
-        cb(new Error('Apenas imagens são permitidas'));
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter: (_req, file, cb) => {
+        if (/^image\/(jpeg|png|gif|webp)$/.test(file.mimetype)) return cb(null, true);
+        // Reported as a 400 by the error handler
+        cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'imagem: envie JPG, PNG, GIF ou WebP'));
     },
 });
 
